@@ -1,0 +1,16 @@
+pandas
+numpy
+seaborn
+matplotlib
+scikit-learn
+catboost
+xgboost
+dill
+flask
+flask-cors
+psycopg2-binary
+gunicorn
+python-dotenv
+plotly
+ipykernel
+-e .
