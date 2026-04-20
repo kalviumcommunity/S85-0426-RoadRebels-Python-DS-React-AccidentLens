@@ -1,0 +1,67 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+.env.*.local
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cache/
+coverage/
+.nyc_output/
+postgres_data/
+mongodb_data/
+redis_data/
+
+# Internal documentation (not for GitHub)
+docs/internal/
+COMPLETE_DELIVERY.md
+INDEX.md
+PROJECT_TREE.md
+SPRINT_CHECKLIST.md
+START_HERE.md
+
+# Old documentation root files (use docs/ folder instead)
+OLD_README.md
+OLD_LAUNCH.md
+OLD_PROJECT_STRUCTURE.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+conda_env/
+*.egg-info/
+catboost_info/
+
+# Data
+*.csv
+data/raw/
+data/plots/
+
+# Logs
+*.log
+backend.log
+frontend.log
+
+# IDEs
+.vscode/
+.idea/
+
+# code-review-graph
+.code-review-graph/
+.kiro/
+.claude/
+.gemini/
+

@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  # Python ML Inference Service
+  python-analysis:
+    build: ./python-analysis
+    container_name: accident-lens-ml
+    ports:
+      - "5001:5001"
+    environment:
+      - PORT=5001
+      - FLASK_ENV=production
+    volumes:
+      - ./python-analysis:/app
+    restart: always
+
+  # React Frontend Dashboard
+  frontend:
+    build: ./frontend
+    container_name: accident-lens-ui
+    ports:
+      - "3001:3001"
+    environment:
+      - VITE_API_URL=http://python-analysis:5001
+    depends_on:
+      - python-analysis
+    restart: always
