@@ -30,7 +30,6 @@ export default function Dashboard() {
       if (mRes.data && mRes.data.data) setMetrics(mRes.data.data)
       if (aRes.data && aRes.data.data) {
         if (aRes.data.data.timeseries) setTimeseries(aRes.data.data.timeseries)
-        if (aRes.data.data.severity_distribution) setSeverityData(aRes.data.data.severity_distribution)
         if (aRes.data.data.road_type_distribution) setHotspots(aRes.data.data.road_type_distribution)
       }
       setRecommendations(rRes.data.data || [])
@@ -227,6 +226,7 @@ export default function Dashboard() {
                 </div>
               </div>
             ))}
+            {recommendations.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No recommendations available right now</p>}
           </CardContent>
         </Card>
       </div>

@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import pandas as pd
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -13,6 +14,220 @@ CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
 
 # Configuration
 DATA_PATH = os.path.join(os.path.dirname(__file__), 'accident_prediction_india.csv')
+MANUAL_REPORTS_PATH = os.path.join(os.path.dirname(__file__), 'artifacts', 'manual_reports.json')
+
+
+def _safe_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_severity(value):
+    raw = str(value or '').strip().lower()
+    mapping = {
+        'fatal': 'fatal',
+        'severe': 'severe',
+        'serious': 'severe',
+        'major': 'severe',
+        'moderate': 'moderate',
+        'minor': 'minor'
+    }
+    return mapping.get(raw, 'moderate')
+
+
+def _normalize_weather(value):
+    raw = str(value or '').strip().lower()
+    if raw in ('clear', 'sunny'):
+        return 'clear'
+    if raw in ('rain', 'rainy', 'drizzle'):
+        return 'rain'
+    if raw in ('fog', 'foggy', 'hazy', 'mist'):
+        return 'fog'
+    if raw in ('snow', 'snowy'):
+        return 'snow'
+    if raw in ('sleet',):
+        return 'sleet'
+    return 'clear'
+
+
+def _normalize_road_type(value):
+    raw = str(value or '').strip().lower()
+    if 'highway' in raw:
+        return 'highway'
+    if 'rural' in raw:
+        return 'rural'
+    return 'urban'
+
+
+def _infer_time_of_day(hour_value):
+    hour = _safe_int(hour_value, 12)
+    if 5 <= hour < 12:
+        return 'Morning'
+    if 12 <= hour < 17:
+        return 'Afternoon'
+    if 17 <= hour < 21:
+        return 'Evening'
+    return 'Night'
+
+
+def _infer_lighting_from_visibility(visibility):
+    vis = str(visibility or '').strip().lower()
+    return 'Dark' if vis in ('poor', 'very_poor') else 'Daylight'
+
+
+def _normalize_time_of_day(value):
+    raw = str(value or '').strip().lower()
+    if raw in ('morning', 'forenoon'):
+        return 'Morning', 8
+    if raw in ('afternoon', 'noon'):
+        return 'Afternoon', 13
+    if raw in ('evening', 'dusk'):
+        return 'Evening', 18
+    if raw in ('night', 'late night', 'midnight'):
+        return 'Night', 22
+    return 'Afternoon', 12
+
+
+def _normalize_vehicle_type(value):
+    raw = str(value or '').strip().lower()
+    if raw in ('car', 'sedan', 'suv'):
+        return 'Car'
+    if raw in ('motorcycle', 'bike', 'two wheeler'):
+        return 'Motorcycle'
+    if raw in ('cycle', 'bicycle'):
+        return 'Cycle'
+    if raw in ('truck', 'lorry'):
+        return 'Truck'
+    return 'Car'
+
+
+def _normalize_prediction_road_type(value):
+    raw = str(value or '').strip().lower()
+    if 'state highway' in raw:
+        return 'State Highway'
+    if 'national highway' in raw or raw == 'highway':
+        return 'National Highway'
+    if 'urban' in raw:
+        return 'Urban Road'
+    if 'rural' in raw or 'village' in raw:
+        return 'Village Road'
+    return str(value or 'National Highway').strip().title()
+
+
+def _prediction_distribution(predicted_severity):
+    templates = {
+        'minor': {'minor': 0.70, 'moderate': 0.18, 'serious': 0.08, 'fatal': 0.04},
+        'moderate': {'minor': 0.18, 'moderate': 0.58, 'serious': 0.18, 'fatal': 0.06},
+        'serious': {'minor': 0.08, 'moderate': 0.20, 'serious': 0.58, 'fatal': 0.14},
+        'fatal': {'minor': 0.03, 'moderate': 0.12, 'serious': 0.25, 'fatal': 0.60}
+    }
+    return templates.get(str(predicted_severity or '').strip().lower(), templates['moderate'])
+
+
+def _canonical_prediction_label(value):
+    raw = str(value or '').strip().lower()
+    mapping = {
+        'minor': 'Minor',
+        'moderate': 'Moderate',
+        'serious': 'Serious',
+        'severe': 'Serious',
+        'fatal': 'Fatal'
+    }
+    return mapping.get(raw, 'Moderate')
+
+
+def _severity_rank(label):
+    rank = {'Minor': 1, 'Moderate': 2, 'Serious': 3, 'Fatal': 4}
+    return rank.get(_canonical_prediction_label(label), 2)
+
+
+def _apply_safety_floor(predicted_severity, speed_limit, weather, visibility, road_type):
+    normalized_weather = _normalize_weather(weather)
+    normalized_road_type = _normalize_road_type(road_type)
+    normalized_visibility = str(visibility or '').strip().lower()
+
+    floor = 'Minor'
+    if speed_limit >= 180:
+        floor = 'Fatal'
+    elif speed_limit >= 140:
+        floor = 'Serious'
+    elif speed_limit >= 110:
+        floor = 'Moderate'
+
+    if speed_limit >= 160 and normalized_weather in ('rain', 'fog', 'snow', 'sleet'):
+        floor = 'Fatal'
+    elif speed_limit >= 120 and normalized_weather in ('rain', 'fog', 'snow', 'sleet'):
+        floor = 'Serious'
+    elif speed_limit >= 110 and normalized_visibility in ('poor', 'very_poor'):
+        floor = 'Serious'
+    elif speed_limit >= 110 and normalized_road_type == 'highway':
+        floor = 'Serious'
+
+    current = _canonical_prediction_label(predicted_severity)
+    return floor if _severity_rank(floor) > _severity_rank(current) else current
+
+
+def _format_dataset_timestamp(row):
+    month_map = {
+        'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5, 'june': 6,
+        'july': 7, 'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12
+    }
+    year = _safe_int(row.get('Year'), datetime.utcnow().year)
+    month_name = str(row.get('Month', 'January')).strip().lower()
+    month = month_map.get(month_name, 1)
+    time_raw = str(row.get('Time of Day', '12:00')).strip()
+    try:
+        hour, minute = time_raw.split(':', 1)
+        return f"{year:04d}-{month:02d}-01T{_safe_int(hour, 12):02d}:{_safe_int(minute, 0):02d}:00"
+    except ValueError:
+        return f"{year:04d}-{month:02d}-01T12:00:00"
+
+
+def _dataset_row_to_accident(row, idx):
+    road_detail = str(row.get('Accident Location Details') or '').strip()
+    city = str(row.get('City Name') or '').strip()
+    road_name = road_detail or city or 'Unknown Location'
+    if city and city.lower() != 'unknown' and city.lower() not in road_name.lower():
+        road_name = f"{road_name}, {city}"
+
+    return {
+        'id': f'csv-{idx}',
+        'timestamp': _format_dataset_timestamp(row),
+        'road_name': road_name,
+        'road_type': _normalize_road_type(row.get('Road Type')),
+        'severity': _normalize_severity(row.get('Accident Severity')),
+        'vehicle_count': _safe_int(row.get('Number of Vehicles Involved'), 0),
+        'injured_count': _safe_int(row.get('Number of Casualties'), 0),
+        'weather': _normalize_weather(row.get('Weather Conditions')),
+        'road_condition': str(row.get('Road Condition') or 'unknown').strip().lower(),
+        'status': 'reported',
+    }
+
+
+def _load_manual_reports():
+    try:
+        if not os.path.exists(MANUAL_REPORTS_PATH):
+            return []
+        with open(MANUAL_REPORTS_PATH, 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+            return data if isinstance(data, list) else []
+    except Exception as err:
+        logging.warning(f"Failed to load manual reports: {err}")
+        return []
+
+
+def _save_manual_reports(reports):
+    try:
+        os.makedirs(os.path.dirname(MANUAL_REPORTS_PATH), exist_ok=True)
+        with open(MANUAL_REPORTS_PATH, 'w', encoding='utf-8') as fh:
+            json.dump(reports, fh, ensure_ascii=True, indent=2)
+    except Exception as err:
+        logging.error(f"Failed to save manual reports: {err}")
+
+
+MANUAL_REPORTS = _load_manual_reports()
 
 def load_dataset():
     """Helper to load the dataset safely."""
@@ -111,8 +326,11 @@ def eda_summary():
             'avg_injured': 1.2,
             'avg_vehicles': 2.1,
             'avg_speed': 45,
+            'avg_speed_limit': 45,
             'top_severity': 'Serious',
+            'most_common_severity': 'Serious',
             'top_weather': 'Clear',
+            'most_common_weather': 'Clear',
             'severity_distribution': [
                 {'name': 'fatal', 'count': 45},
                 {'name': 'severe', 'count': 220},
@@ -133,44 +351,101 @@ def health():
 @app.route('/api/predict/severity', methods=['POST'])
 def predict_severity():
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         logging.info(f"Prediction requested for: {data}")
+
+        weather_conditions = data.get('weatherConditions') or data.get('weather_conditions') or data.get('weather') or 'clear'
+        road_type = data.get('roadType') or data.get('road_type') or 'urban'
+        road_condition = data.get('roadCondition') or data.get('road_condition') or 'dry'
+        lighting_conditions = data.get('lightingConditions') or data.get('lighting_conditions') or _infer_lighting_from_visibility(data.get('visibility'))
+        time_of_day, inferred_hour = _normalize_time_of_day(data.get('timeOfDay') or data.get('time_of_day') or _infer_time_of_day(data.get('hour')))
+        hour = _safe_int(data.get('hour'), inferred_hour)
+        num_vehicles = _safe_int(data.get('numVehicles') or data.get('num_vehicles') or data.get('vehicle_count'), 2)
+        num_casualties = _safe_int(data.get('numCasualties') or data.get('num_casualties') or data.get('injured_count'), 0)
+        speed_limit = _safe_int(data.get('speedLimit') or data.get('speed_limit'), 40)
+        driver_age = _safe_int(data.get('driverAge') or data.get('driver_age'), 30)
+
+        predicted_severity = 'moderate'
+        confidence = 0.78
+        probabilities = _prediction_distribution(predicted_severity)
 
         try:
             # Try real ML model
             custom_data = CustomData(
-                weather_conditions=data.get('weatherConditions') or data.get('weather_conditions'),
-                road_type=data.get('roadType') or data.get('road_type'),
-                road_condition=data.get('roadCondition') or data.get('road_condition'),
-                lighting_conditions=data.get('lightingConditions') or data.get('lighting_conditions'),
-                time_of_day=data.get('timeOfDay') or data.get('time_of_day'),
-                vehicle_type=data.get('vehicleType') or data.get('vehicle_type', 'Car'),
-                driver_gender=data.get('driverGender') or data.get('driver_gender', 'Male'),
-                alcohol_involvement=data.get('alcoholInvolvement') or data.get('alcohol_involvement', 'No'),
-                num_vehicles=int(data.get('numVehicles') or data.get('num_vehicles', 2)),
-                num_casualties=int(data.get('numCasualties') or data.get('num_casualties', 0)),
-                speed_limit=int(data.get('speedLimit') or data.get('speed_limit', 40)),
-                driver_age=int(data.get('driverAge') or data.get('driver_age', 30))
+                weather_conditions=str(weather_conditions).strip().title(),
+                road_type=_normalize_prediction_road_type(road_type),
+                road_condition=str(road_condition).strip().title(),
+                lighting_conditions=str(lighting_conditions).strip().title(),
+                time_of_day=time_of_day,
+                vehicle_type=_normalize_vehicle_type(data.get('vehicleType') or data.get('vehicle_type') or data.get('vehicleTypeInvolved')),
+                driver_gender=str(data.get('driverGender') or data.get('driver_gender') or 'Male').strip().title(),
+                alcohol_involvement=str(data.get('alcoholInvolvement') or data.get('alcohol_involvement') or 'No').strip().title(),
+                num_vehicles=num_vehicles,
+                num_casualties=num_casualties,
+                speed_limit=speed_limit,
+                driver_age=driver_age,
+                hour=hour
             )
             pred_df = custom_data.get_data_as_data_frame()
             predict_pipeline = PredictPipeline()
             results = predict_pipeline.predict(pred_df)
-            prediction = results[0]
+            predicted_severity = _canonical_prediction_label(results[0])
+            probabilities = _prediction_distribution(predicted_severity)
+            confidence = 0.84
         except Exception as ml_err:
             logging.warning(f"ML Model failed, using heuristic fallback: {str(ml_err)}")
-            # Robust Heuristic Fallback
-            speed = int(data.get('speedLimit') or 40)
-            weather = (data.get('weatherConditions') or 'Clear').lower()
-            if speed > 80 or weather in ['stormy', 'foggy']:
-                prediction = 'Fatal'
-            elif speed > 50 or weather == 'rainy':
-                prediction = 'Serious'
+
+            weather = _normalize_weather(weather_conditions)
+            road = _normalize_road_type(road_type)
+            visibility = str(data.get('visibility') or '').strip().lower()
+            hour = _safe_int(data.get('hour'), 12)
+
+            risk_score = 0
+            if speed_limit >= 85:
+                risk_score += 3
+            elif speed_limit >= 65:
+                risk_score += 2
+            elif speed_limit >= 45:
+                risk_score += 1
+
+            if weather in ('rain', 'fog', 'snow', 'sleet'):
+                risk_score += 2
+            if road == 'highway':
+                risk_score += 1
+            if visibility in ('poor', 'very_poor'):
+                risk_score += 2
+            if hour >= 20 or hour <= 5:
+                risk_score += 1
+            if num_vehicles >= 4:
+                risk_score += 1
+
+            if risk_score >= 7:
+                predicted_severity = 'Fatal'
+            elif risk_score >= 5:
+                predicted_severity = 'Serious'
+            elif risk_score >= 3:
+                predicted_severity = 'Moderate'
             else:
-                prediction = 'Minor'
+                predicted_severity = 'Minor'
+
+            probabilities = _prediction_distribution(predicted_severity)
+            confidence = min(0.95, 0.62 + (risk_score * 0.05))
+
+        predicted_severity = _apply_safety_floor(
+            predicted_severity,
+            speed_limit,
+            weather_conditions,
+            data.get('visibility'),
+            road_type,
+        )
+        probabilities = _prediction_distribution(predicted_severity)
 
         return jsonify({
             'status': 'success',
-            'prediction': prediction,
+            'prediction': predicted_severity,
+            'predicted_severity': predicted_severity,
+            'probabilities': probabilities,
+            'confidence': round(confidence, 2),
             'timestamp': datetime.utcnow().isoformat()
         })
 
@@ -266,19 +541,65 @@ def dashboard_analytics():
             }
         })
 
-@app.route('/api/accidents', methods=['GET'])
+@app.route('/api/accidents', methods=['GET', 'POST'])
 def list_accidents():
-    # Return a sample of the actual data
-    import pandas as pd
+    global MANUAL_REPORTS
+
+    if request.method == 'POST':
+        try:
+            data = request.get_json() or {}
+            report = {
+                'id': f"manual-{int(datetime.utcnow().timestamp() * 1000)}",
+                'timestamp': datetime.utcnow().isoformat(),
+                'road_name': data.get('location') or data.get('road_name') or 'Unknown Location',
+                'road_type': _normalize_road_type(data.get('roadType') or data.get('road_type')),
+                'severity': _normalize_severity(data.get('severity')),
+                'vehicle_count': _safe_int(data.get('vehicle_count'), 1),
+                'injured_count': _safe_int(data.get('injured_count'), 0),
+                'weather': _normalize_weather(data.get('weather')),
+                'road_condition': str(data.get('road_condition') or 'unknown').strip().lower(),
+                'status': 'reported',
+                'description': data.get('description') or ''
+            }
+            MANUAL_REPORTS = [report] + MANUAL_REPORTS
+            _save_manual_reports(MANUAL_REPORTS)
+            return jsonify({'status': 'success', 'data': report}), 201
+        except Exception as e:
+            return jsonify({'status': 'error', 'error': str(e)}), 500
+
     try:
-        df = pd.read_csv('accident_prediction_india.csv')
-        sample = df.head(10).to_dict(orient='records')
+        severity = str(request.args.get('severity', '')).strip().lower()
+        road_type = str(request.args.get('roadType', '')).strip().lower()
+        weather = str(request.args.get('weather', '')).strip().lower()
+        limit = max(_safe_int(request.args.get('limit', 20), 20), 1)
+        offset = max(_safe_int(request.args.get('offset', 0), 0), 0)
+
+        df = load_dataset()
+        dataset_records = []
+        if df is not None:
+            dataset_records = [_dataset_row_to_accident(row, idx) for idx, row in df.iterrows()]
+
+        all_records = MANUAL_REPORTS + dataset_records
+
+        if severity:
+            all_records = [r for r in all_records if str(r.get('severity', '')).lower() == severity]
+        if road_type:
+            all_records = [r for r in all_records if str(r.get('road_type', '')).lower() == road_type]
+        if weather:
+            all_records = [r for r in all_records if str(r.get('weather', '')).lower() == weather]
+
+        total = len(all_records)
+        rows = all_records[offset: offset + limit]
+
         return jsonify({
             'status': 'success',
-            'data': sample
+            'data': rows,
+            'total': total,
+            'limit': limit,
+            'offset': offset
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 @app.route('/api/recommendations/generate', methods=['GET'])
 def generate_recommendations():
@@ -346,8 +667,33 @@ def dashboard_recommendations():
     return jsonify({
         'status': 'success',
         'data': [
-            {'id': 1, 'title': 'Deploy Highway Patrol', 'impact': 'High', 'type': 'Safety'},
-            {'id': 2, 'title': 'Install Lighting at Sector 4', 'impact': 'Medium', 'type': 'Infrastructure'}
+            {
+                'id': 1,
+                'title': 'Deploy Highway Patrol',
+                'description': 'Increase patrol frequency on high-risk corridors between 8 PM and 2 AM.',
+                'priority': 'high',
+                'confidence': 0.91,
+                'impact': 'High',
+                'type': 'Safety'
+            },
+            {
+                'id': 2,
+                'title': 'Install Lighting at Sector 4',
+                'description': 'Improve visibility near intersections with repeated night-time incidents.',
+                'priority': 'medium',
+                'confidence': 0.83,
+                'impact': 'Medium',
+                'type': 'Infrastructure'
+            },
+            {
+                'id': 3,
+                'title': 'Adaptive Speed Enforcement',
+                'description': 'Trigger variable speed limits during rain and low-visibility periods.',
+                'priority': 'high',
+                'confidence': 0.88,
+                'impact': 'High',
+                'type': 'Enforcement'
+            }
         ]
     })
 

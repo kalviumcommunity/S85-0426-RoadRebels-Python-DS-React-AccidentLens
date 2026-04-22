@@ -39,13 +39,17 @@ export default function AccidentsPage() {
 
   const downloadCSV = () => {
     if (!accidents.length) return
+    const escapeCsv = (value: unknown) => {
+      const raw = value == null ? '' : String(value)
+      return `"${raw.replace(/"/g, '""')}"`
+    }
     const headers = ['Date', 'Road', 'Type', 'Severity', 'Vehicles', 'Injured', 'Weather', 'Condition', 'Status']
     const rows = accidents.map(a => [
       new Date(a.timestamp).toLocaleString(), a.road_name || a.roadName, a.road_type || a.roadType,
       a.severity, a.vehicle_count ?? a.vehicleCount, a.injured_count ?? a.injuredCount,
       a.weather, a.road_condition || a.roadCondition, a.status,
     ])
-    const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
+    const csv = [headers, ...rows].map(r => r.map(escapeCsv).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')

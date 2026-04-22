@@ -10,7 +10,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import gsap from 'gsap'
 
 const WEATHER_ICONS: Record<string, any> = { clear: Sun, rain: CloudRain, fog: CloudFog, snow: Snowflake, sleet: CloudDrizzle }
-const SEVERITY_COLORS: Record<string, string> = { minor: '#10b981', moderate: '#eab308', severe: '#f97316', fatal: '#ef4444' }
+const SEVERITY_COLORS: Record<string, string> = { minor: '#10b981', moderate: '#eab308', serious: '#f97316', severe: '#f97316', fatal: '#ef4444' }
 
 export default function PredictionsPage() {
   const [tab, setTab] = useState<'predict' | 'forecast' | 'zones'>('predict')
@@ -195,7 +195,7 @@ export default function PredictionsPage() {
                         <h2 className="text-2xl font-bold text-foreground uppercase">{prediction.predicted_severity}</h2>
                         <p className="text-sm text-muted-foreground">Predicted Severity</p>
                         <div className="mt-2">
-                          <Badge variant={prediction.predicted_severity === 'fatal' ? 'fatal' : prediction.predicted_severity === 'severe' ? 'destructive' : 'warning'}>
+                          <Badge variant={prediction.predicted_severity === 'fatal' ? 'fatal' : (prediction.predicted_severity === 'severe' || prediction.predicted_severity === 'serious') ? 'destructive' : 'warning'}>
                             {Math.round((prediction.confidence || 0.8) * 100)}% Confidence
                           </Badge>
                         </div>

@@ -1,5 +1,4 @@
-# Build stage
-FROM node:18-alpine AS builder
+FROM node:18-alpine
 
 WORKDIR /app
 
@@ -8,18 +7,6 @@ RUN npm ci 2>&1 || npm install
 
 COPY . .
 
-RUN npm run build
+EXPOSE 3001
 
-# Runtime stage
-FROM node:18-alpine
-
-WORKDIR /app
-
-RUN npm install -g serve
-
-# Vite outputs to 'dist' instead of CRA's 'build'
-COPY --from=builder /app/dist ./dist
-
-EXPOSE 3000
-
-CMD ["serve", "-s", "dist", "-l", "3000"]
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3001"]
