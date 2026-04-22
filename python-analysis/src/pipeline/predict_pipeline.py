@@ -49,7 +49,8 @@ class CustomData:
         num_vehicles: int,
         num_casualties: int,
         speed_limit: int,
-        driver_age: int):
+        driver_age: int,
+        hour: int | None = None):
 
         self.weather_conditions = weather_conditions
         self.road_type = road_type
@@ -63,22 +64,38 @@ class CustomData:
         self.num_casualties = num_casualties
         self.speed_limit = speed_limit
         self.driver_age = driver_age
+        self.hour = hour
+
+    def _resolve_hour(self):
+        if self.hour is not None:
+            try:
+                return int(self.hour)
+            except (TypeError, ValueError):
+                pass
+
+        time_bucket = str(self.time_of_day or '').strip().lower()
+        mapping = {
+            'morning': 8,
+            'afternoon': 13,
+            'evening': 18,
+            'night': 22,
+        }
+        return mapping.get(time_bucket, 12)
 
     def get_data_as_data_frame(self):
         try:
             custom_data_input_dict = {
-                "Weather Conditions": [self.weather_conditions],
-                "Road Type": [self.road_type],
-                "Road Condition": [self.road_condition],
-                "Lighting Conditions": [self.lighting_conditions],
-                "Time of Day": [self.time_of_day],
-                "Vehicle Type Involved": [self.vehicle_type],
-                "Driver Gender": [self.driver_gender],
-                "Alcohol Involvement": [self.alcohol_involvement],
-                "Number of Vehicles Involved": [self.num_vehicles],
-                "Number of Casualties": [self.num_casualties],
-                "Speed Limit (km/h)": [self.speed_limit],
-                "Driver Age": [self.driver_age]
+                "Weather_Conditions": [self.weather_conditions],
+                "Road_Type": [self.road_type],
+                "Lighting_Conditions": [self.lighting_conditions],
+                "Vehicle_Type_Involved": [self.vehicle_type],
+                "Driver_Gender": [self.driver_gender],
+                "Alcohol_Involvement": [self.alcohol_involvement],
+                "Number_of_Vehicles_Involved": [self.num_vehicles],
+                "Number_of_Casualties": [self.num_casualties],
+                "Driver_Age": [self.driver_age],
+                "Speed_Limit_(km/h)": [self.speed_limit],
+                "Hour": [self._resolve_hour()]
             }
 
             return pd.DataFrame(custom_data_input_dict)

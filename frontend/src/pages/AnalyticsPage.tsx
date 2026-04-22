@@ -83,6 +83,10 @@ export default function AnalyticsPage() {
     most_common_severity: 'moderate', most_common_weather: 'rain',
   }
 
+  const avgSpeed = summary.avg_speed_limit ?? summary.avg_speed
+  const topSeverity = summary.most_common_severity ?? summary.top_severity
+  const topWeather = summary.most_common_weather ?? summary.top_weather
+
   if (loading) {
     return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-64 w-full rounded-xl" />)}</div>
   }
@@ -119,9 +123,9 @@ export default function AnalyticsPage() {
                 { label: 'Total Accidents', value: summary.total_accidents },
                 { label: 'Avg Injured', value: summary.avg_injured?.toFixed?.(1) || summary.avg_injured },
                 { label: 'Avg Vehicles', value: summary.avg_vehicles?.toFixed?.(1) || summary.avg_vehicles },
-                { label: 'Avg Speed Limit', value: `${summary.avg_speed_limit?.toFixed?.(0) || summary.avg_speed_limit} mph` },
-                { label: 'Top Severity', value: summary.most_common_severity },
-                { label: 'Top Weather', value: summary.most_common_weather },
+                { label: 'Avg Speed Limit', value: `${avgSpeed?.toFixed?.(0) || avgSpeed} mph` },
+                { label: 'Top Severity', value: topSeverity },
+                { label: 'Top Weather', value: topWeather },
               ].map((s, i) => (
                 <Card key={i} className="text-center"><CardContent className="py-3">
                   <p className="text-xs text-muted-foreground mb-1">{s.label}</p>
