@@ -265,13 +265,40 @@ def load_dataset():
 
 @app.route('/api/alerts/active', methods=['GET'])
 def active_alerts():
-    return jsonify({
-        'status': 'success',
-        'data': [
-            {'id': 1, 'title': 'High Risk: Highway 101', 'severity': 'high', 'timestamp': datetime.now().isoformat()},
-            {'id': 2, 'title': 'Fog Warning: Sector 7', 'severity': 'medium', 'timestamp': datetime.now().isoformat()}
-        ]
-    })
+    try:
+        df = load_dataset()
+        if df is None:
+            return jsonify({'status': 'success', 'data': []})
+
+        alerts = []
+        # 1. Hotspot Alert
+        top_city = df['City Name'].value_counts().idxmax()
+        if top_city.lower() != 'unknown':
+            alerts.append({
+                'id': 1,
+                'title': f'High Risk Area: {top_city}',
+                'severity': 'high',
+                'description': f'Unusual concentration of incidents detected in {top_city}.',
+                'timestamp': datetime.now().isoformat()
+            })
+
+        # 2. Weather Alert
+        top_weather = df[df['Accident Severity'] == 'Fatal']['Weather Conditions'].mode()[0]
+        if top_weather.lower() != 'clear':
+            alerts.append({
+                'id': 2,
+                'title': f'{top_weather} Fatality Warning',
+                'severity': 'critical',
+                'description': f'{top_weather} conditions are showing a high correlation with fatal outcomes.',
+                'timestamp': datetime.now().isoformat()
+            })
+
+        return jsonify({
+            'status': 'success',
+            'data': alerts
+        })
+    except Exception as e:
+        return jsonify({'status': 'success', 'data': []})
 
 @app.route('/api/analytics/trends', methods=['GET'])
 def analytics_trends():
@@ -728,13 +755,7 @@ def list_accidents():
 
 @app.route('/api/recommendations/generate', methods=['GET'])
 def generate_recommendations():
-    return jsonify({
-        'status': 'success',
-        'data': [
-            {'id': 3, 'title': 'Add Rumble Strips', 'impact': 'Medium', 'type': 'Engineering'},
-            {'id': 4, 'title': 'Reduce Speed Limit to 40', 'impact': 'High', 'type': 'Enforcement'}
-        ]
-    })
+    return dashboard_recommendations()
 
 @app.route('/api/recommendations', methods=['GET'])
 def get_recommendations_list():
@@ -851,13 +872,7 @@ def dashboard_recommendations():
 
 @app.route('/api/dashboard/alerts', methods=['GET'])
 def dashboard_alerts():
-    return jsonify({
-        'status': 'success',
-        'data': [
-            {'id': 1, 'type': 'High Risk', 'message': 'Heavy rain predicted on NH-44', 'severity': 'Critical'},
-            {'id': 2, 'type': 'Alert', 'message': 'Increased traffic in Urban Sector 5', 'severity': 'Warning'}
-        ]
-    })
+    return active_alerts()
 
 if __name__ == '__main__':
     # Use environment variables for port and debug mode
