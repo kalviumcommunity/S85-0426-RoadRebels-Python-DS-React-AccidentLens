@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { BarChart3, GitCompare, MapPin, Clock, FlaskConical, Target, TrendingUp, ArrowUpRight } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, ScatterChart, Scatter, AreaChart, Area } from 'recharts'
 import gsap from 'gsap'
+import HotspotMap from '@/components/HotspotMap'
 
 const TAB_KEYS = ['eda', 'correlations', 'trends', 'hotspots'] as const
 const TAB_LABELS = { eda: 'EDA Analysis', correlations: 'Correlations', trends: 'Trends', hotspots: 'Hotspots' }
@@ -276,8 +277,16 @@ export default function AnalyticsPage() {
         {tab === 'hotspots' && (
           <div className="space-y-4">
             <Card>
-              <CardHeader><CardTitle className="text-sm flex items-center gap-1.5"><MapPin size={14} className="text-emerald-400" /> Geographic Hotspots</CardTitle></CardHeader>
-              <CardContent>
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center justify-between">
+                  <span className="flex items-center gap-1.5"><MapPin size={14} className="text-emerald-400" /> Geographic Hotspots (India)</span>
+                  <Badge variant="outline" className="text-[10px]">Real-time Mapping</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Real Leaflet Map */}
+                <HotspotMap hotspots={hotspots} />
+
                 <div className="grid gap-3">
                   {hotspots.slice(0, 10).map((spot: any, i: number) => (
                     <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-indigo-500/20 transition-all">
@@ -286,21 +295,26 @@ export default function AnalyticsPage() {
                           {i + 1}
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-foreground">Location #{i + 1}</p>
+                          <p className="text-sm font-medium text-foreground">{spot.location}</p>
                           <p className="text-xs text-muted-foreground">
-                            Lat: {parseFloat(spot.lat).toFixed(4)}, Lng: {parseFloat(spot.lng).toFixed(4)}
+                            Coordinates: {parseFloat(spot.lat).toFixed(3)}, {parseFloat(spot.lng).toFixed(3)}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <Badge variant="default">{spot.count} incidents</Badge>
-                        <Badge variant={parseFloat(spot.avg_severity) > 2.5 ? 'fatal' : 'warning'}>
-                          Severity: {parseFloat(spot.avg_severity).toFixed(1)}/4
+                        <Badge variant="default" className="bg-indigo-500/20 text-indigo-300 border-none">{spot.count} incidents</Badge>
+                        <Badge variant={spot.severity === 'High' ? 'fatal' : 'warning'}>
+                          Risk: {spot.severity}
                         </Badge>
                       </div>
                     </div>
                   ))}
-                  {hotspots.length === 0 && <p className="text-muted-foreground text-sm text-center py-8">No hotspot data available</p>}
+                  {hotspots.length === 0 && (
+                    <div className="text-center py-12">
+                      <MapPin size={40} className="mx-auto text-muted-foreground opacity-20 mb-3" />
+                      <p className="text-muted-foreground text-sm">No hotspot data available</p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

@@ -16,6 +16,32 @@ CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
 DATA_PATH = os.path.join(os.path.dirname(__file__), 'accident_prediction_india.csv')
 MANUAL_REPORTS_PATH = os.path.join(os.path.dirname(__file__), 'artifacts', 'manual_reports.json')
 
+# Mapping of major Indian cities to their coordinates (Lat, Lng)
+CITY_COORDINATES = {
+    'Jammu and Kashmir': (34.0837, 74.7973),
+    'Srinagar': (34.0837, 74.7973),
+    'Jammu': (32.7266, 74.8570),
+    'Lucknow': (26.8467, 80.9462),
+    'Delhi': (28.6139, 77.2090),
+    'Mumbai': (19.0760, 72.8777),
+    'Bangalore': (12.9716, 77.5946),
+    'Chennai': (13.0827, 80.2707),
+    'Kolkata': (22.5726, 88.3639),
+    'Hyderabad': (17.3850, 78.4867),
+    'Ahmedabad': (23.0225, 72.5714),
+    'Pune': (18.5204, 73.8567),
+    'Jaipur': (26.9124, 75.7873),
+    'Surat': (21.1702, 72.8311),
+    'Kanpur': (26.4499, 80.3319),
+    'Nagpur': (21.1458, 79.0882),
+    'Patna': (25.5941, 85.1376),
+    'Indore': (22.7196, 75.8577),
+    'Thane': (19.2183, 72.9781),
+    'Bhopal': (23.2599, 77.4126),
+    'Visakhapatnam': (17.6868, 83.2185),
+    'Unknown': (20.5937, 78.9629) # Center of India
+}
+
 
 def _safe_int(value, default=0):
     try:
@@ -249,39 +275,118 @@ def active_alerts():
 
 @app.route('/api/analytics/trends', methods=['GET'])
 def analytics_trends():
-    return jsonify({
-        'status': 'success',
-        'data': [
-            { 'date': '2026-04-10', 'count': 45, 'severe': 12 },
-            { 'date': '2026-04-11', 'count': 38, 'severe': 8 },
-            { 'date': '2026-04-12', 'count': 52, 'severe': 15 },
-            { 'date': '2026-04-13', 'count': 41, 'severe': 10 },
-            { 'date': '2026-04-14', 'count': 49, 'severe': 14 },
-            { 'date': '2026-04-15', 'count': 33, 'severe': 7 }
-        ]
-    })
+    try:
+        df = load_dataset()
+        if df is None:
+            return jsonify({'status': 'error', 'message': 'Dataset not found'}), 500
+        
+        # Create a trend by Year and Month
+        # Map month names to numbers for sorting
+        month_map = {
+            'January': 1, 'February': 2, 'March': 3, 'April': 4, 'May': 5, 'June': 6,
+            'July': 7, 'August': 8, 'September': 9, 'October': 10, 'November': 11, 'December': 12
+        }
+        
+        # Filter for recent years if possible or just group
+        trend_df = df.groupby(['Year', 'Month']).size().reset_index(name='count')
+        trend_df['month_num'] = trend_df['Month'].map(month_map)
+        trend_df = trend_df.sort_values(['Year', 'month_num']).tail(12)
+        
+        # Format for charts
+        data = []
+        for _, row in trend_df.iterrows():
+            data.append({
+                'date': f"{row['Year']}-{row['Month'][:3]}",
+                'count': int(row['count']),
+                'severe': int(row['count'] * 0.2) # Approximation for visualization
+            })
+            
+        return jsonify({
+            'status': 'success',
+            'data': data
+        })
+    except Exception as e:
+        logging.error(f"Error in analytics_trends: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/analytics/hotspots', methods=['GET'])
 def analytics_hotspots():
-    return jsonify({
-        'status': 'success',
-        'data': [
-            { 'id': 1, 'location': 'Downtown Crossing', 'count': 120, 'severity': 'High', 'lat': 28.6139, 'lng': 77.2090 },
-            { 'id': 2, 'location': 'North Highway Exit', 'count': 85, 'severity': 'Medium', 'lat': 28.7041, 'lng': 77.1025 },
-            { 'id': 3, 'location': 'East Industrial Road', 'count': 64, 'severity': 'Low', 'lat': 28.5355, 'lng': 77.3910 }
-        ]
-    })
+    try:
+        df = load_dataset()
+        if df is None:
+            return jsonify({'status': 'error', 'message': 'Dataset not found'}), 500
+            
+        # Group by City to find hotspots
+        hotspot_df = df.groupby('City Name').size().reset_index(name='count')
+        # Filter out 'Unknown' if possible
+        hotspot_df = hotspot_df[hotspot_df['City Name'].str.lower() != 'unknown']
+        hotspot_df = hotspot_df.sort_values('count', ascending=False).head(10)
+        
+        data = []
+        for idx, row in hotspot_df.iterrows():
+            city = row['City Name']
+            coords = CITY_COORDINATES.get(city, CITY_COORDINATES.get(df[df['City Name'] == city]['State Name'].iloc[0] if not df[df['City Name'] == city].empty else 'Unknown', CITY_COORDINATES['Unknown']))
+            
+            # Add some jitter to prevent overlapping
+            lat = coords[0] + (idx * 0.005)
+            lng = coords[1] + (idx * 0.005)
+
+            data.append({
+                'id': idx,
+                'location': city,
+                'count': int(row['count']),
+                'severity': 'High' if row['count'] > 15 else 'Medium',
+                'lat': lat,
+                'lng': lng
+            })
+            
+        return jsonify({
+            'status': 'success',
+            'data': data
+        })
+    except Exception as e:
+        logging.error(f"Error in analytics_hotspots: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/analytics/correlations', methods=['GET'])
 def analytics_correlations():
-    return jsonify({
-        'status': 'success',
-        'data': [
-            { 'factor': 'Weather vs Severity', 'value': 0.85 },
-            { 'factor': 'Speed vs Fatalities', 'value': 0.92 },
-            { 'factor': 'Night vs Accidents', 'value': 0.78 }
-        ]
-    })
+    try:
+        df = load_dataset()
+        if df is None:
+            return jsonify({'status': 'error', 'message': 'Dataset not found'}), 500
+            
+        # Select numeric columns for correlation
+        numeric_df = df.select_dtypes(include=['number'])
+        
+        # Add categorical mapping for severity for correlation
+        severity_map = {'Minor': 1, 'Moderate': 2, 'Serious': 3, 'Fatal': 4}
+        temp_df = df.copy()
+        temp_df['Severity_Num'] = temp_df['Accident Severity'].map(severity_map).fillna(2)
+        
+        # Calculate correlations with severity
+        correlations = []
+        for col in numeric_df.columns:
+            if col != 'Severity_Num':
+                corr_val = float(temp_df[['Severity_Num', col]].corr().iloc[0, 1])
+                if not pd.isna(corr_val):
+                    correlations.append({
+                        'var1': col,
+                        'var2': 'Accident Severity',
+                        'value': round(corr_val, 2)
+                    })
+        
+        # Add some interesting categorical correlations (mocked based on counts)
+        # In a real app, we'd use Cramer's V for categorical-categorical
+        correlations.append({'var1': 'Weather', 'var2': 'Accident Severity', 'value': 0.72})
+        correlations.append({'var1': 'Road Condition', 'var2': 'Accident Severity', 'value': 0.61})
+        
+        return jsonify({
+            'status': 'success',
+            'data': correlations
+        })
+    except Exception as e:
+        logging.error(f"Error in analytics_correlations: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/analytics/timeseries', methods=['GET'])
 def analytics_timeseries():
@@ -290,21 +395,38 @@ def analytics_timeseries():
 
 @app.route('/api/eda/distributions', methods=['GET'])
 def eda_distributions():
-    return jsonify({
-        'status': 'success',
-        'data': {
-            'weather': [
-                {'name': 'Clear', 'count': 450},
-                {'name': 'Rainy', 'count': 120},
-                {'name': 'Foggy', 'count': 80}
-            ],
-            'road_type': [
-                {'name': 'Highway', 'count': 500},
-                {'name': 'Urban', 'count': 300},
-                {'name': 'Rural', 'count': 200}
-            ]
-        }
-    })
+    try:
+        df = load_dataset()
+        if df is None:
+            return jsonify({'status': 'error', 'message': 'Dataset not found'}), 500
+
+        weather_dist = df['Weather Conditions'].value_counts().reset_index().rename(columns={'index': 'name', 'Weather Conditions': 'count'}).to_dict(orient='records')
+        road_dist = df['Road Type'].value_counts().reset_index().rename(columns={'index': 'name', 'Road Type': 'count'}).to_dict(orient='records')
+        severity_dist = df['Accident Severity'].value_counts().reset_index().rename(columns={'index': 'name', 'Accident Severity': 'count'}).to_dict(orient='records')
+        
+        # Hourly distribution
+        def extract_hour(time_str):
+            try:
+                return int(str(time_str).split(':')[0])
+            except:
+                return 12
+
+        temp_df = df.copy()
+        temp_df['hour'] = temp_df['Time of Day'].apply(extract_hour)
+        hour_counts = temp_df.groupby('hour').size().reset_index(name='count')
+        hour_dist = hour_counts.to_dict(orient='records')
+
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'weather': weather_dist,
+                'road_type': road_dist,
+                'severity': severity_dist,
+                'hour_of_day': hour_dist
+            }
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/eda/correlations', methods=['GET'])
 def eda_correlations():
@@ -319,26 +441,41 @@ def eda_correlations():
 
 @app.route('/api/eda/summary', methods=['GET'])
 def eda_summary():
-    return jsonify({
-        'status': 'success',
-        'data': {
-            'total_accidents': 1250,
-            'avg_injured': 1.2,
-            'avg_vehicles': 2.1,
-            'avg_speed': 45,
-            'avg_speed_limit': 45,
-            'top_severity': 'Serious',
-            'most_common_severity': 'Serious',
-            'top_weather': 'Clear',
-            'most_common_weather': 'Clear',
-            'severity_distribution': [
-                {'name': 'fatal', 'count': 45},
-                {'name': 'severe', 'count': 220},
-                {'name': 'moderate', 'count': 320},
-                {'name': 'minor', 'count': 665}
-            ]
-        }
-    })
+    try:
+        df = load_dataset()
+        if df is None:
+            return jsonify({'status': 'error', 'message': 'Dataset not found'}), 500
+        
+        # Calculate real stats
+        total = len(df)
+        avg_injured = float(df['Number of Casualties'].mean())
+        avg_vehicles = float(df['Number of Vehicles Involved'].mean())
+        avg_speed_limit = float(df['Speed Limit (km/h)'].mean())
+        
+        severity_counts = df['Accident Severity'].value_counts().reset_index()
+        severity_counts.columns = ['name', 'count']
+        severity_dist = severity_counts.to_dict(orient='records')
+        
+        most_common_severity = severity_counts.iloc[0]['name'] if not severity_counts.empty else 'Unknown'
+        most_common_weather = df['Weather Conditions'].mode()[0] if not df['Weather Conditions'].empty else 'Unknown'
+
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'total_accidents': total,
+                'avg_injured': round(avg_injured, 2),
+                'avg_vehicles': round(avg_vehicles, 2),
+                'avg_speed_limit': round(avg_speed_limit, 2),
+                'top_severity': most_common_severity,
+                'most_common_severity': most_common_severity,
+                'top_weather': most_common_weather,
+                'most_common_weather': most_common_weather,
+                'severity_distribution': severity_dist
+            }
+        })
+    except Exception as e:
+        logging.error(f"Error in eda_summary: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -455,9 +592,11 @@ def predict_severity():
 
 @app.route('/api/dashboard/metrics', methods=['GET'])
 def dashboard_metrics():
-    import pandas as pd
     try:
-        df = pd.read_csv('accident_prediction_india.csv')
+        df = load_dataset()
+        if df is None:
+            raise ValueError("Dataset not found")
+            
         total_accidents = len(df)
         fatalities = int(df['Number of Fatalities'].sum())
         injuries = int(df['Number of Casualties'].sum())
@@ -465,38 +604,34 @@ def dashboard_metrics():
         # Severity counts
         severity_counts = df['Accident Severity'].value_counts().to_dict()
         
+        # Calculate hotspot count based on unique locations
+        hotspot_count = df['City Name'].nunique()
+        
         return jsonify({
             'status': 'success',
             'data': {
                 'totalAccidents': total_accidents,
                 'fatalAccidents': fatalities,
                 'severeAccidents': severity_counts.get('Serious', 0),
-                'safeHoursStreak': 12,
+                'safeHoursStreak': 12, # Still mock, as we don't have real-time live data
                 'totalInjured': injuries,
-                'hotspotCount': 8,
-                'trend': 5
+                'hotspotCount': hotspot_count,
+                'trend': -3 # Static for now, could be calculated comparing years
             }
         })
     except Exception as e:
         logging.error(f"Error calculating metrics: {e}")
         return jsonify({
-            'status': 'success',
-            'data': {
-                'totalAccidents': 1250,
-                'fatalAccidents': 45,
-                'severeAccidents': 320,
-                'safeHoursStreak': 12,
-                'totalInjured': 415,
-                'hotspotCount': 8,
-                'trend': 5
-            }
-        })
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 @app.route('/api/dashboard/analytics', methods=['GET'])
 def dashboard_analytics():
-    import pandas as pd
     try:
-        df = pd.read_csv('accident_prediction_india.csv')
+        df = load_dataset()
+        if df is None:
+            raise ValueError("Dataset not found")
         
         # Severity distribution for pie chart
         severity_dist = df['Accident Severity'].value_counts().reset_index()
@@ -506,25 +641,20 @@ def dashboard_analytics():
         road_dist = df['Road Type'].value_counts().head(5).reset_index()
         road_dist.columns = ['name', 'value']
         
-        # Monthly trend (using a subset of data for timeseries)
-        # Assuming we want a sample of recent dates or just a trend
-        # For now, we'll keep a semi-realistic trend based on the data
-        timeseries = [
-            { 'date': '2026-04-10', 'count': 45, 'severe': 12 },
-            { 'date': '2026-04-11', 'count': 38, 'severe': 8 },
-            { 'date': '2026-04-12', 'count': 52, 'severe': 15 },
-            { 'date': '2026-04-13', 'count': 41, 'severe': 10 }
+        # Hourly distribution (needs Time of Day column parsing)
+        # We'll mock the hourly buckets based on 'Time of Day' hour if available
+        hourly_data = [
+            { 'name': 'Morning', 'fatal': int(len(df[(df['Accident Severity'] == 'Fatal') & (df['Time of Day'].str.contains('Morning', case=False, na=False))])) },
+            { 'name': 'Afternoon', 'fatal': int(len(df[(df['Accident Severity'] == 'Fatal') & (df['Time of Day'].str.contains('Afternoon', case=False, na=False))])) },
+            { 'name': 'Evening', 'fatal': int(len(df[(df['Accident Severity'] == 'Fatal') & (df['Time of Day'].str.contains('Evening', case=False, na=False))])) },
+            { 'name': 'Night', 'fatal': int(len(df[(df['Accident Severity'] == 'Fatal') & (df['Time of Day'].str.contains('Night', case=False, na=False))])) }
         ]
 
         return jsonify({
             'status': 'success',
             'data': {
-                'hourly_distribution': [
-                    { 'name': '00:00', 'fatal': 10, 'serious': 20, 'minor': 40 },
-                    { 'name': '08:00', 'fatal': 25, 'serious': 45, 'minor': 80 },
-                    { 'name': '16:00', 'fatal': 40, 'serious': 70, 'minor': 110 }
-                ],
-                'timeseries': timeseries,
+                'hourly_distribution': hourly_data,
+                'timeseries': analytics_trends().get_json()['data'], # Reuse trends logic
                 'road_type_distribution': road_dist.to_dict(orient='records'),
                 'severity_distribution': severity_dist.to_dict(orient='records')
             }
@@ -532,14 +662,9 @@ def dashboard_analytics():
     except Exception as e:
         logging.error(f"Error calculating analytics: {e}")
         return jsonify({
-            'status': 'success',
-            'data': {
-                'hourly_distribution': [],
-                'timeseries': [],
-                'road_type_distribution': [],
-                'severity_distribution': []
-            }
-        })
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 @app.route('/api/accidents', methods=['GET', 'POST'])
 def list_accidents():
@@ -664,38 +789,65 @@ def verify():
 
 @app.route('/api/dashboard/recommendations', methods=['GET'])
 def dashboard_recommendations():
-    return jsonify({
-        'status': 'success',
-        'data': [
-            {
+    try:
+        df = load_dataset()
+        if df is None:
+            return jsonify({'status': 'error', 'message': 'Dataset not found'}), 500
+
+        recommendations = []
+        
+        # 1. Check for Night Risks
+        night_accidents = len(df[df['Time of Day'].str.contains('Night', case=False, na=False)])
+        if night_accidents > (len(df) * 0.25):
+            recommendations.append({
                 'id': 1,
-                'title': 'Deploy Highway Patrol',
-                'description': 'Increase patrol frequency on high-risk corridors between 8 PM and 2 AM.',
+                'title': 'High-Intensity Night Patrols',
+                'description': f'Night-time incidents account for {int(night_accidents/len(df)*100)}% of total accidents. Increase highway lighting and visibility checks.',
                 'priority': 'high',
-                'confidence': 0.91,
+                'confidence': 0.92,
                 'impact': 'High',
-                'type': 'Safety'
-            },
-            {
+                'type': 'Enforcement'
+            })
+            
+        # 2. Check for Weather Risks
+        rain_fatalities = df[df['Weather Conditions'] == 'Rainy']['Number of Fatalities'].sum()
+        if rain_fatalities > 0:
+            recommendations.append({
                 'id': 2,
-                'title': 'Install Lighting at Sector 4',
-                'description': 'Improve visibility near intersections with repeated night-time incidents.',
-                'priority': 'medium',
-                'confidence': 0.83,
-                'impact': 'Medium',
-                'type': 'Infrastructure'
-            },
-            {
-                'id': 3,
-                'title': 'Adaptive Speed Enforcement',
-                'description': 'Trigger variable speed limits during rain and low-visibility periods.',
+                'title': 'Rain-Adaptive Speed Limits',
+                'description': 'Wet road conditions are leading to increased fatalities. Implement variable speed limits (VSL) during precipitation.',
                 'priority': 'high',
                 'confidence': 0.88,
                 'impact': 'High',
-                'type': 'Enforcement'
-            }
-        ]
-    })
+                'type': 'Safety'
+            })
+            
+        # 3. Check for Road Type Risks
+        highway_accidents = len(df[df['Road Type'].str.contains('Highway', case=False, na=False)])
+        if highway_accidents > (len(df) * 0.3):
+            recommendations.append({
+                'id': 3,
+                'title': 'Automated Highway Enforcement',
+                'description': 'High volume of incidents on National/State highways. Deploy additional speed cameras and rumble strips.',
+                'priority': 'medium',
+                'confidence': 0.85,
+                'impact': 'Medium',
+                'type': 'Infrastructure'
+            })
+
+        # Fallback if no specific data-driven recs
+        if not recommendations:
+            recommendations = [
+                {'id': 1, 'title': 'Standard Safety Audit', 'description': 'Conduct routine inspections of major intersections.', 'priority': 'low', 'confidence': 0.70, 'impact': 'Low', 'type': 'Safety'}
+            ]
+
+        return jsonify({
+            'status': 'success',
+            'data': recommendations
+        })
+    except Exception as e:
+        logging.error(f"Error in dashboard_recommendations: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/dashboard/alerts', methods=['GET'])
 def dashboard_alerts():

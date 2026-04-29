@@ -49,22 +49,20 @@ export default function SafetyDashboard() {
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Chart data (ideally fetched from API)
-  const severityTrendData = [
-    { name: '00:00', fatal: 10, serious: 20, minor: 40 },
-    { name: '04:00', fatal: 5, serious: 15, minor: 30 },
-    { name: '08:00', fatal: 25, serious: 45, minor: 80 },
-    { name: '12:00', fatal: 30, serious: 50, minor: 90 },
-    { name: '16:00', fatal: 40, serious: 70, minor: 110 },
-    { name: '20:00', fatal: 20, serious: 40, minor: 70 },
+  const [distributions, setDistributions] = useState<any>(null);
+
+  const roadTypeData = distributions?.road_type?.slice(0, 5) || [
+    { name: 'National Highway', value: 450 },
+    { name: 'Urban Road', value: 320 },
   ];
 
-  const roadTypeData = [
-    { name: 'Highway', value: 450 },
-    { name: 'Urban', value: 320 },
-    { name: 'Rural', value: 180 },
-    { name: 'Residential', value: 120 },
-  ];
+  const hourlyData = (distributions?.hour_of_day || []).map((h: any) => ({
+    name: `${h.hour}:00`,
+    count: h.count,
+    fatal: Math.round(h.count * 0.1),
+    serious: Math.round(h.count * 0.3),
+    minor: Math.round(h.count * 0.6)
+  }));
 
   useEffect(() => {
     if (containerRef.current) {
@@ -74,12 +72,21 @@ export default function SafetyDashboard() {
       );
     }
 
-    const loadWeather = async () => {
-      const weather = await fetchCurrentWeather(28.6139, 77.2090);
-      setWeatherData(weather);
-      setForm(prev => ({ ...prev, weatherConditions: weather.condition }));
+    const loadData = async () => {
+      try {
+        const [weather, distRes] = await Promise.all([
+          fetchCurrentWeather(28.6139, 77.2090),
+          analysisAPI.edaDistributions()
+        ]);
+        
+        setWeatherData(weather);
+        setForm(prev => ({ ...prev, weatherConditions: weather.condition }));
+        if (distRes.data?.data) setDistributions(distRes.data.data);
+      } catch (err) {
+        console.error("Failed to load dashboard data", err);
+      }
     };
-    loadWeather();
+    loadData();
   }, []);
 
   const handlePredict = async () => {
@@ -221,7 +228,11 @@ export default function SafetyDashboard() {
             <CardContent>
               <div className="h-[250px] w-full mt-4">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={severityTrendData}>
+                  <AreaChart data={hourlyData.length > 0 ? hourlyData : [
+                    { name: '00:00', fatal: 10, serious: 20, minor: 40 },
+                    { name: '12:00', fatal: 30, serious: 50, minor: 90 },
+                    { name: '23:00', fatal: 20, serious: 40, minor: 70 },
+                  ]}>
                     <defs>
                       <linearGradient id="colorFatal" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#ef4444" stopOpacity={0.4}/>
@@ -234,9 +245,8 @@ export default function SafetyDashboard() {
                     <Tooltip 
                       contentStyle={{ backgroundColor: 'hsl(222 47% 14%)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
                     />
-                    <Area type="monotone" dataKey="fatal" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorFatal)" />
-                    <Area type="monotone" dataKey="serious" stroke="#f59e0b" strokeWidth={2} fill="none" />
-                    <Area type="monotone" dataKey="minor" stroke="#3b82f6" strokeWidth={2} fill="none" />
+                    <Area type="monotone" dataKey="count" name="Total Accidents" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill="url(#colorFatal)" />
+                    <Area type="monotone" dataKey="fatal" name="Fatal (Est)" stroke="#ef4444" strokeWidth={1} fill="none" strokeDasharray="3 3" />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
