@@ -74,10 +74,13 @@ export default function SafetyDashboard() {
 
     const loadData = async () => {
       try {
-        const [weather, distRes] = await Promise.all([
-          fetchCurrentWeather(28.6139, 77.2090),
+        const [metricsRes, distRes] = await Promise.all([
+          dashboardAPI.metrics(),
           analysisAPI.edaDistributions()
         ]);
+        
+        const topCoords = metricsRes.data?.data?.topHotspotCoords || { lat: 28.6139, lng: 77.2090 };
+        const weather = await fetchCurrentWeather(topCoords.lat, topCoords.lng);
         
         setWeatherData(weather);
         setForm(prev => ({ ...prev, weatherConditions: weather.condition }));
