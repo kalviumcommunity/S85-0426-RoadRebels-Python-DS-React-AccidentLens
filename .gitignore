@@ -64,4 +64,7 @@ frontend.log
 .kiro/
 .claude/
 .gemini/
+PRESENTATION_CONTENT.md
+PROJECT_ANALYSIS.md
+PROJECT_WORKFLOW.md
 
