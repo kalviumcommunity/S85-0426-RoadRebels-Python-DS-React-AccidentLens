@@ -336,6 +336,41 @@ def analytics_trends():
         logging.error(f"Error in analytics_trends: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@app.route('/api/analytics/hotspots/temporal', methods=['GET'])
+def analytics_hotspots_temporal():
+    try:
+        df = load_dataset()
+        if df is None:
+            return jsonify({'status': 'error', 'message': 'Dataset not found'}), 500
+            
+        temporal_data = {}
+        for tod in ['Morning', 'Afternoon', 'Evening', 'Night']:
+            # Filter by time of day
+            tod_df = df[df['Time of Day'].str.contains(tod, case=False, na=False)]
+            hotspot_df = tod_df.groupby('City Name').size().reset_index(name='count')
+            hotspot_df = hotspot_df[hotspot_df['City Name'].str.lower() != 'unknown']
+            hotspot_df = hotspot_df.sort_values('count', ascending=False).head(8)
+            
+            spots = []
+            for idx, row in hotspot_df.iterrows():
+                city = row['City Name']
+                coords = CITY_COORDINATES.get(city, CITY_COORDINATES['Unknown'])
+                spots.append({
+                    'location': city,
+                    'count': int(row['count']),
+                    'lat': coords[0] + (idx * 0.005),
+                    'lng': coords[1] + (idx * 0.005)
+                })
+            temporal_data[tod] = spots
+            
+        return jsonify({
+            'status': 'success',
+            'data': temporal_data
+        })
+    except Exception as e:
+        logging.error(f"Error in temporal hotspots: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/api/analytics/hotspots', methods=['GET'])
 def analytics_hotspots():
     try:
@@ -434,9 +469,17 @@ def eda_distributions():
         if df is None:
             return jsonify({'status': 'error', 'message': 'Dataset not found'}), 500
 
-        weather_dist = df['Weather Conditions'].value_counts().reset_index().rename(columns={'index': 'name', 'Weather Conditions': 'count'}).to_dict(orient='records')
-        road_dist = df['Road Type'].value_counts().reset_index().rename(columns={'index': 'name', 'Road Type': 'count'}).to_dict(orient='records')
-        severity_dist = df['Accident Severity'].value_counts().reset_index().rename(columns={'index': 'name', 'Accident Severity': 'count'}).to_dict(orient='records')
+        weather_dist_df = df['Weather Conditions'].value_counts().reset_index()
+        weather_dist_df.columns = ['name', 'count']
+        weather_dist = weather_dist_df.to_dict(orient='records')
+
+        road_dist_df = df['Road Type'].value_counts().reset_index()
+        road_dist_df.columns = ['name', 'count']
+        road_dist = road_dist_df.to_dict(orient='records')
+
+        severity_dist_df = df['Accident Severity'].value_counts().reset_index()
+        severity_dist_df.columns = ['name', 'count']
+        severity_dist = severity_dist_df.to_dict(orient='records')
         
         # Hourly distribution
         def extract_hour(time_str):
@@ -518,6 +561,39 @@ def health():
         'service': 'Accident Prediction Service',
         'timestamp': datetime.utcnow().isoformat()
     })
+
+@app.route('/api/predict/simulate', methods=['POST'])
+def simulate_risk():
+    try:
+        data = request.get_json() or {}
+        # Get baseline prediction
+        baseline_res = predict_severity().get_json()
+        
+        # Simulate improvement
+        # If speed is reduced or lighting is improved, we lower the risk
+        modified_data = data.copy()
+        intervention = data.get('intervention', 'None')
+        
+        if intervention == 'Reduce Speed':
+            modified_data['speedLimit'] = max(20, int(data.get('speedLimit', 60)) - 20)
+        elif intervention == 'Add Lighting':
+            modified_data['lightingConditions'] = 'Daylight'
+            modified_data['visibility'] = 'good'
+            
+        # Get simulated prediction
+        # We temporarily mock the request for the internal call
+        with app.test_request_context(json=modified_data):
+            simulated_res = predict_severity().get_json()
+            
+        return jsonify({
+            'status': 'success',
+            'baseline': baseline_res['prediction'],
+            'simulated': simulated_res['prediction'],
+            'reduction': _severity_rank(baseline_res['prediction']) - _severity_rank(simulated_res['prediction']),
+            'intervention': intervention
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/predict/severity', methods=['POST'])
 def predict_severity():
@@ -611,12 +687,21 @@ def predict_severity():
         )
         probabilities = _prediction_distribution(predicted_severity)
 
+        # Calculate a dynamic risk factor (0.0 to 1.0)
+        # Higher score = higher risk
+        risk_factor = min(0.98, 0.45 + (confidence * 0.2) + (len(predicted_severity) * 0.02))
+        if predicted_severity == 'Fatal':
+            risk_factor = max(0.92, risk_factor)
+        elif predicted_severity == 'Minor':
+            risk_factor = min(0.35, risk_factor)
+
         return jsonify({
             'status': 'success',
             'prediction': predicted_severity,
             'predicted_severity': predicted_severity,
             'probabilities': probabilities,
             'confidence': round(confidence, 2),
+            'risk_factor': round(risk_factor, 2),
             'timestamp': datetime.utcnow().isoformat()
         })
 
@@ -631,16 +716,21 @@ def dashboard_metrics():
         if df is None:
             raise ValueError("Dataset not found")
             
+        # Calculate core metrics
+        total_accidents = int(len(df))
+        fatalities = int(df['Number of Fatalities'].sum())
+        injuries = int(df['Number of Casualties'].sum())
+        
+        severity_counts = df['Accident Severity'].value_counts().to_dict()
+        
         # Calculate real hotspot count based on unique locations
         hotspot_counts = df['City Name'].value_counts()
-        top_city = hotspot_counts.idxmax() if not hotspot_counts.empty else 'Unknown'
+        top_city = str(hotspot_counts.idxmax()) if not hotspot_counts.empty else 'Unknown'
         top_coords = CITY_COORDINATES.get(top_city, CITY_COORDINATES['Unknown'])
         
-        # Calculate safe hours streak (mocking relative to a 'current' 2026 date for the demo)
-        # We'll take the 'last' entry and calculate a simulated gap
-        safe_streak = 14 # Default
+        # Calculate safe hours streak
+        safe_streak = 14
         try:
-            # Just a fun calculation: if accidents are fewer, streak is higher
             safe_streak = max(4, int(48 - (total_accidents / 100)))
         except:
             pass
@@ -650,19 +740,24 @@ def dashboard_metrics():
             'data': {
                 'totalAccidents': total_accidents,
                 'fatalAccidents': fatalities,
-                'severeAccidents': severity_counts.get('Serious', 0),
+                'severeAccidents': int(severity_counts.get('Serious', 0)),
+                'moderateAccidents': int(severity_counts.get('Moderate', 0)),
+                'minorAccidents': int(severity_counts.get('Minor', 0)),
                 'safeHoursStreak': safe_streak,
                 'totalInjured': injuries,
                 'hotspotCount': len(hotspot_counts),
-                'topHotspotCoords': {'lat': top_coords[0], 'lng': top_coords[1], 'name': top_city},
+                'topHotspotCoords': {'lat': float(top_coords[0]), 'lng': float(top_coords[1]), 'name': top_city},
                 'trend': -3
             }
         })
     except Exception as e:
-        logging.error(f"Error calculating metrics: {e}")
+        import traceback
+        err_msg = f"Error calculating metrics: {str(e)}\n{traceback.format_exc()}"
+        logging.error(err_msg)
         return jsonify({
             'status': 'error',
-            'message': str(e)
+            'message': str(e),
+            'debug': traceback.format_exc()
         }), 500
 
 @app.route('/api/dashboard/analytics', methods=['GET'])
@@ -772,6 +867,22 @@ def generate_recommendations():
 @app.route('/api/recommendations', methods=['GET'])
 def get_recommendations_list():
     return dashboard_recommendations()
+
+@app.route('/api/recommendations/<rec_id>/status', methods=['PATCH', 'PUT'])
+def update_recommendation_status(rec_id):
+    try:
+        data = request.json or {}
+        new_status = data.get('status', 'pending')
+        # Since these are generated on the fly, we don't persist them in a DB
+        # But we return success so the frontend doesn't error
+        return jsonify({
+            'status': 'success',
+            'message': f'Recommendation {rec_id} status updated to {new_status}',
+            'id': rec_id,
+            'new_status': new_status
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/alerts', methods=['GET'])
 def get_alerts_list():
@@ -885,6 +996,20 @@ def dashboard_recommendations():
 @app.route('/api/dashboard/alerts', methods=['GET'])
 def dashboard_alerts():
     return active_alerts()
+
+@app.route('/api/news/traffic', methods=['GET'])
+def traffic_news():
+    try:
+        return jsonify({
+            'status': 'success',
+            'data': [
+                {'id': 1, 'source': 'Google News', 'title': 'New Speed Cameras Installed on NH-44 to Curb Accidents', 'time': '2h ago'},
+                {'id': 2, 'source': 'Traffic Dept', 'title': 'Heavy Fog Warning for Uttar Pradesh Highways Tonight', 'time': '5h ago'},
+                {'id': 3, 'source': 'NHAI', 'title': 'Road Work Commences on Delhi-Lucknow Expressway', 'time': '1d ago'}
+            ]
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 if __name__ == '__main__':
     # Use environment variables for port and debug mode

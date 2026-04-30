@@ -13,4 +13,3 @@ gunicorn
 python-dotenv
 plotly
 ipykernel
--e .
