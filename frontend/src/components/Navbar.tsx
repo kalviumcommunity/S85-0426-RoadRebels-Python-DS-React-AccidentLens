@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, LogOut, User, Shield, AlertCircle, MapPin } from 'lucide-react'
+import { Bell, LogOut, User, Shield, AlertCircle, MapPin, Sun, Moon, FileDown } from 'lucide-react'
 import gsap from 'gsap'
 import { Badge } from '@/components/ui/badge'
 import { recommendationAPI } from '@/services/api'
@@ -8,9 +8,11 @@ import { recommendationAPI } from '@/services/api'
 interface NavbarProps {
   user: any
   onLogout: () => void
+  theme: 'dark' | 'light'
+  onToggleTheme: () => void
 }
 
-export default function Navbar({ user, onLogout }: NavbarProps) {
+export default function Navbar({ user, onLogout, theme, onToggleTheme }: NavbarProps) {
   const navigate = useNavigate()
   const navRef = useRef<HTMLElement>(null)
   
@@ -40,11 +42,31 @@ export default function Navbar({ user, onLogout }: NavbarProps) {
     return () => clearInterval(interval)
   }, [])
 
+  const handleExportPDF = () => {
+    window.print()
+  }
+
   return (
     <header ref={navRef} className="h-16 glass border-b border-white/[0.06] flex items-center justify-between px-6 z-30">
-      <div />
+      <div className="flex items-center gap-4">
+         <button 
+          onClick={handleExportPDF}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-[10px] font-bold text-indigo-400 hover:bg-indigo-500/20 transition-all uppercase tracking-wider"
+        >
+          <FileDown size={14} /> Export Audit PDF
+        </button>
+      </div>
 
       <div className="flex items-center gap-4 relative">
+        {/* Theme Toggle */}
+        <button
+          onClick={onToggleTheme}
+          className="p-2 rounded-lg hover:bg-white/5 transition-all duration-200 text-muted-foreground hover:text-foreground focus:outline-none"
+          title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
+        >
+          {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+        </button>
+
         {/* Alert bell */}
         <button
           onClick={() => setIsAlertOpen(!isAlertOpen)}

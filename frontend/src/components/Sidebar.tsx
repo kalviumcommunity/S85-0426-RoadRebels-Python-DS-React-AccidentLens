@@ -13,8 +13,12 @@ const navItems = [
   { to: '/recommendations', icon: Lightbulb, label: 'Recommendations' },
 ]
 
-export default function Sidebar() {
-  const [collapsed, setCollapsed] = useState(false)
+interface SidebarProps {
+  collapsed: boolean
+  onToggle: () => void
+}
+
+export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const sidebarRef = useRef<HTMLElement>(null)
   const itemsRef = useRef<(HTMLAnchorElement | null)[]>([])
 
@@ -33,7 +37,7 @@ export default function Sidebar() {
     <aside
       ref={sidebarRef}
       className={cn(
-        "fixed left-0 top-0 h-screen glass border-r border-white/[0.06] z-40 flex flex-col transition-all duration-300",
+        "h-screen glass border-r border-white/[0.06] z-40 flex flex-col transition-all duration-300 flex-shrink-0",
         collapsed ? "w-[72px]" : "w-[250px]"
       )}
     >
@@ -72,7 +76,7 @@ export default function Sidebar() {
 
       {/* Collapse toggle */}
       <button
-        onClick={() => setCollapsed(!collapsed)}
+        onClick={onToggle}
         className="m-3 flex items-center justify-center h-9 rounded-lg border border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all duration-200"
       >
         {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}

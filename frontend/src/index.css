@@ -24,6 +24,20 @@
     --radius: 0.75rem;
   }
 
+  .light {
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --primary: 239 84% 67%;
+    --secondary: 210 40% 96%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 90%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+  }
+
   * {
     border-color: hsl(var(--border));
   }
@@ -34,6 +48,11 @@
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+  
+  html {
+    overflow-x: hidden;
   }
 }
 
@@ -118,4 +137,19 @@
 }
 .leaflet-popup-tip {
   background: hsl(var(--card)) !important;
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  display: flex;
+  width: max-content;
+  animation: marquee 40s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
 }

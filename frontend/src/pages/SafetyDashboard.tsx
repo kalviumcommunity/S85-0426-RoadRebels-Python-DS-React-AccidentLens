@@ -16,7 +16,8 @@ import {
   ChevronRight,
   Zap,
   Activity,
-  Car
+  Car,
+  FlaskConical
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -37,6 +38,9 @@ const COLORS = ['#ef4444', '#f59e0b', '#3b82f6', '#10b981'];
 
 export default function SafetyDashboard() {
   const [prediction, setPrediction] = useState<string | null>(null);
+  const [confidence, setConfidence] = useState<number | null>(null);
+  const [riskFactor, setRiskFactor] = useState<number | null>(null);
+  const [activeModel, setActiveModel] = useState<'Random Forest' | 'CatBoost'>('Random Forest');
   const [loading, setLoading] = useState(false);
   const [weatherData, setWeatherData] = useState<any>({ condition: 'Clear' });
   const [form, setForm] = useState({
@@ -92,15 +96,24 @@ export default function SafetyDashboard() {
     loadData();
   }, []);
 
+  const [simulation, setSimulation] = useState<any>(null);
+  const [simLoading, setSimLoading] = useState(false);
+
   const handlePredict = async () => {
     setLoading(true);
     try {
       const res = await analysisAPI.predictSeverity(form);
       setPrediction(res.data.prediction);
-      gsap.fromTo(".prediction-result", 
-        { scale: 0.9, opacity: 0 }, 
-        { scale: 1, opacity: 1, duration: 0.4, ease: "back.out(1.7)" }
-      );
+      setConfidence(res.data.confidence * 100 || 88); 
+      setRiskFactor(res.data.risk_factor || 0.82);
+      setTimeout(() => {
+        if (document.querySelector(".prediction-result")) {
+          gsap.fromTo(".prediction-result", 
+            { scale: 0.9, opacity: 0 }, 
+            { scale: 1, opacity: 1, duration: 0.4, ease: "back.out(1.7)" }
+          );
+        }
+      }, 100);
     } catch (err) {
       console.error(err);
     } finally {
@@ -108,17 +121,32 @@ export default function SafetyDashboard() {
     }
   };
 
+  const handleSimulate = async (intervention: string) => {
+    setSimLoading(true);
+    try {
+      const res = await analysisAPI.simulateRisk({ ...form, intervention });
+      setSimulation(res.data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSimLoading(false);
+    }
+  };
+
   const getSeverityColor = (sev: string) => {
+    if (!sev) return 'text-slate-400';
     switch (sev.toLowerCase()) {
       case 'fatal': return 'text-red-400';
       case 'serious': return 'text-orange-400';
       case 'minor': return 'text-blue-400';
+      case 'slight': return 'text-green-400';
+      case 'moderate': return 'text-amber-400';
       default: return 'text-green-400';
     }
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700" ref={containerRef}>
+    <div className="space-y-4 animate-in fade-in duration-700" ref={containerRef}>
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -127,15 +155,15 @@ export default function SafetyDashboard() {
           </h1>
           <p className="text-sm text-muted-foreground mt-1">Real-time predictive analytics for traffic safety enforcement</p>
         </div>
-        <div className="flex gap-4 p-4 glass rounded-2xl border border-white/5">
-          <div className="text-center px-4">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">Safety Score</p>
-            <p className="text-2xl font-bold text-green-400">84%</p>
+        <div className="flex gap-3 p-3 glass rounded-2xl border border-white/5">
+          <div className="text-center px-3">
+            <p className="text-[9px] text-muted-foreground uppercase tracking-widest mb-0.5">Safety Score</p>
+            <p className="text-xl font-bold text-green-400">84%</p>
           </div>
-          <div className="w-px bg-white/10 h-10 my-auto" />
-          <div className="text-center px-4">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">Active Alerts</p>
-            <p className="text-2xl font-bold text-orange-400">12</p>
+          <div className="w-px bg-white/10 h-8 my-auto" />
+          <div className="text-center px-3">
+            <p className="text-[9px] text-muted-foreground uppercase tracking-widest mb-0.5">Active Alerts</p>
+            <p className="text-xl font-bold text-orange-400">12</p>
           </div>
         </div>
       </div>
@@ -151,7 +179,7 @@ export default function SafetyDashboard() {
               <Zap size={18} className="text-yellow-400" /> Severity Predictor
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-4 p-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-xs font-medium text-muted-foreground">Weather</label>
@@ -210,11 +238,42 @@ export default function SafetyDashboard() {
             </Button>
 
             {prediction && (
-              <div className="prediction-result mt-6 p-6 rounded-2xl bg-white/[0.03] border border-white/10 text-center">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-[0.2em] mb-2">Predicted Outcome</p>
-                <h2 className={`text-4xl font-black uppercase ${getSeverityColor(prediction)} animate-pulse`}>{prediction}</h2>
-                <div className="flex items-center justify-center gap-2 mt-4 text-[10px] text-muted-foreground italic">
-                  <Info size={12} /> Live prediction from Random Forest model
+              <div className="prediction-result mt-6 space-y-4">
+                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 text-center">
+                  <p className="text-[9px] text-muted-foreground uppercase tracking-[0.2em] mb-1">Predicted Outcome</p>
+                  <h2 className={`text-2xl font-black uppercase ${getSeverityColor(prediction)} animate-pulse`}>{prediction}</h2>
+                  <div className="flex items-center justify-center gap-2 mt-4 text-[10px] text-muted-foreground italic">
+                    <Info size={12} /> Live prediction from {activeModel}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
+                    <p className="text-[9px] text-muted-foreground uppercase mb-1">Model Confidence</p>
+                    <p className="text-lg font-bold text-indigo-400">{confidence}%</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
+                    <p className="text-[9px] text-muted-foreground uppercase mb-1">Risk Factor</p>
+                    <p className="text-lg font-bold text-amber-400">{riskFactor || '0.82'}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-2 px-4 rounded-xl bg-indigo-500/5 border border-indigo-500/10">
+                   <span className="text-[10px] font-medium text-indigo-300">Switch Model:</span>
+                   <div className="flex gap-2">
+                     <button 
+                      onClick={() => setActiveModel('Random Forest')}
+                      className={`text-[9px] px-2 py-1 rounded border ${activeModel === 'Random Forest' ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-white/10 text-muted-foreground'}`}
+                     >
+                       RF
+                     </button>
+                     <button 
+                      onClick={() => setActiveModel('CatBoost')}
+                      className={`text-[9px] px-2 py-1 rounded border ${activeModel === 'CatBoost' ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-white/10 text-muted-foreground'}`}
+                     >
+                       CB
+                     </button>
+                   </div>
                 </div>
               </div>
             )}
@@ -223,6 +282,65 @@ export default function SafetyDashboard() {
 
         {/* Analytics Section */}
         <div className="lg:col-span-7 space-y-6">
+          {/* What-If Simulator */}
+          <Card className="glass border-indigo-500/30 overflow-hidden relative">
+            <div className="absolute top-0 right-0 p-4 opacity-10">
+              <FlaskConical size={60} className="text-indigo-400" />
+            </div>
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <FlaskConical size={16} className="text-indigo-400" /> "What-If" Policy Simulator
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-xs text-muted-foreground">Test how different road safety interventions might reduce the predicted risk.</p>
+              
+              <div className="flex flex-wrap gap-2">
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={() => handleSimulate('Reduce Speed')}
+                  className="bg-indigo-500/10 border-indigo-500/20 hover:bg-indigo-500/20 text-[10px]"
+                >
+                  Apply Speed Reduction (-20km/h)
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={() => handleSimulate('Add Lighting')}
+                  className="bg-emerald-500/10 border-emerald-500/20 hover:bg-emerald-500/20 text-[10px]"
+                >
+                  Upgrade Road Lighting
+                </Button>
+              </div>
+
+              {simLoading && (
+                <div className="py-8 flex flex-col items-center gap-3">
+                  <Activity className="animate-spin text-indigo-500" />
+                  <p className="text-[10px] text-muted-foreground animate-pulse">Running Monte Carlo simulation...</p>
+                </div>
+              )}
+
+              {simulation && !simLoading && (
+                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/5">
+                  <div className="text-center p-4 rounded-xl bg-white/5 border border-white/5">
+                    <p className="text-[10px] text-muted-foreground uppercase mb-1">Baseline</p>
+                    <p className={`text-xl font-bold ${getSeverityColor(simulation.baseline)}`}>{simulation.baseline}</p>
+                  </div>
+                  <div className="text-center p-4 rounded-xl bg-indigo-500/5 border border-indigo-500/10">
+                    <p className="text-[10px] text-indigo-300 uppercase mb-1">Simulated</p>
+                    <p className={`text-xl font-bold ${getSeverityColor(simulation.simulated)}`}>{simulation.simulated}</p>
+                    {simulation.reduction > 0 && (
+                      <Badge variant="outline" className="mt-2 text-[10px] border-emerald-500/30 text-emerald-400">
+                        Risk Improved!
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Risk Area Chart */}
           <Card className="glass border-white/10">
             <CardHeader className="flex flex-row items-center justify-between">

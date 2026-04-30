@@ -93,7 +93,7 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 animate-in fade-in duration-500">
       <div>
         <h1 className="text-2xl font-bold text-foreground flex items-center gap-2"><BarChart3 size={28} className="text-purple-400" /> Analytics & EDA</h1>
         <p className="text-sm text-muted-foreground mt-1">Exploratory data analysis, correlations, and geographic insights</p>
@@ -140,7 +140,7 @@ export default function AnalyticsPage() {
               <Card>
                 <CardHeader><CardTitle className="text-sm">Severity Distribution</CardTitle></CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width="100%" height={220}>
+                  <ResponsiveContainer width="100%" height={160}>
                     <BarChart data={severityDist}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                       <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 11 }} />
@@ -158,7 +158,7 @@ export default function AnalyticsPage() {
               <Card>
                 <CardHeader><CardTitle className="text-sm">Weather Conditions</CardTitle></CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width="100%" height={220}>
+                  <ResponsiveContainer width="100%" height={160}>
                     <PieChart>
                       <Pie data={weatherDist} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={4} dataKey="count" stroke="none">
                         {weatherDist.map((_: any, i: number) => <Cell key={i} fill={COLORS_WEATHER[i % COLORS_WEATHER.length]} />)}
@@ -168,7 +168,7 @@ export default function AnalyticsPage() {
                   </ResponsiveContainer>
                   <div className="flex flex-wrap gap-2 justify-center mt-2">
                     {weatherDist.map((w: any, i: number) => (
-                      <span key={w.name} className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <span key={`${w.name}-${i}`} className="flex items-center gap-1 text-xs text-muted-foreground">
                         <span className="w-2 h-2 rounded-full" style={{ background: COLORS_WEATHER[i % COLORS_WEATHER.length] }} /> {w.name}: {w.count}
                       </span>
                     ))}
@@ -180,7 +180,7 @@ export default function AnalyticsPage() {
               <Card>
                 <CardHeader><CardTitle className="text-sm">Road Type Breakdown</CardTitle></CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width="100%" height={220}>
+                  <ResponsiveContainer width="100%" height={160}>
                     <BarChart data={roadDist} layout="vertical">
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                       <XAxis type="number" stroke="#64748b" tick={{ fontSize: 11 }} />
@@ -196,7 +196,7 @@ export default function AnalyticsPage() {
               <Card>
                 <CardHeader><CardTitle className="text-sm flex items-center gap-1.5"><Clock size={14} className="text-amber-400" /> Accidents by Hour</CardTitle></CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width="100%" height={220}>
+                  <ResponsiveContainer width="100%" height={160}>
                     <AreaChart data={hourDist}>
                       <defs>
                         <linearGradient id="gHour" x1="0" y1="0" x2="0" y2="1">

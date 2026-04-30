@@ -69,11 +69,19 @@ export const analysisAPI = {
   riskZones: () => analysisApi.get('/predict/risk-zones').catch(() => ({ data: { data: null } })),
   alerts: () => analysisApi.get('/alerts/active').catch(() => ({ data: { data: [] } })),
   modelMetrics: () => analysisApi.get('/model/metrics').catch(() => ({ data: { data: null } })),
+  temporalHotspots: () => analysisApi.get('/analytics/hotspots/temporal'),
+  simulateRisk: (data: any) => analysisApi.post('/predict/simulate', data),
   ingestCsv: (file: File) => {
     const fd = new FormData()
     fd.append('file', file)
     return analysisApi.post('/ingest/csv', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
   },
+}
+
+
+// ── News ──
+export const newsAPI = {
+  traffic: () => api.get('/news/traffic').catch(() => ({ data: { data: [] } })),
 }
 
 export default api

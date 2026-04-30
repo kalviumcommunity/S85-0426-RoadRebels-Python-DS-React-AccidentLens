@@ -42,10 +42,10 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => {
-    if (!loading && metricsRef.current) {
+    if (!loading && metricsRef.current && metricsRef.current.children.length > 0) {
       gsap.fromTo(metricsRef.current.children, { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, stagger: 0.1, ease: 'power3.out' })
     }
-    if (!loading && chartsRef.current) {
+    if (!loading && chartsRef.current && chartsRef.current.children.length > 0) {
       gsap.fromTo(chartsRef.current.children, { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, stagger: 0.12, ease: 'power3.out', delay: 0.3 })
     }
   }, [loading])
@@ -53,8 +53,8 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1,2,3,4].map(i => <Skeleton key={i} className="h-32 rounded-xl" />)}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          {[1,2,3,4].map(i => <Skeleton key={i} className="h-28 rounded-xl" />)}
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Skeleton className="h-80 rounded-xl lg:col-span-2" />
@@ -85,7 +85,7 @@ export default function Dashboard() {
   }))
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2"><TrendingUp size={28} className="text-indigo-400" /> Dashboard</h1>

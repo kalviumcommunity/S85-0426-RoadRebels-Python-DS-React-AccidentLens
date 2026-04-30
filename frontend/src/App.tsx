@@ -14,15 +14,34 @@ export default function App() {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+
   useEffect(() => {
     const token = localStorage.getItem('token')
     const saved = localStorage.getItem('user')
+    const savedTheme = localStorage.getItem('theme') as 'dark' | 'light'
+    
     if (token && saved) {
       setIsAuthenticated(true)
       setUser(JSON.parse(saved))
     }
+    
+    if (savedTheme) {
+      setTheme(savedTheme)
+      document.documentElement.classList.toggle('light', savedTheme === 'light')
+    } else {
+      document.documentElement.classList.remove('light')
+    }
+    
     setLoading(false)
   }, [])
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'dark' ? 'light' : 'dark'
+    setTheme(newTheme)
+    localStorage.setItem('theme', newTheme)
+    document.documentElement.classList.toggle('light', newTheme === 'light')
+  }
 
   const handleLogin = (token: string, userData: any) => {
     localStorage.setItem('token', token)
@@ -50,7 +69,7 @@ export default function App() {
   }
 
   return (
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
         <Route path="/login" element={
           isAuthenticated ? <Navigate to="/dashboard" /> : <LoginPage onLogin={handleLogin} />
@@ -58,7 +77,7 @@ export default function App() {
 
         {/* Protected routes with Layout */}
         <Route element={
-          isAuthenticated ? <Layout user={user} onLogout={handleLogout} /> : <Navigate to="/login" />
+          isAuthenticated ? <Layout user={user} onLogout={handleLogout} theme={theme} onToggleTheme={toggleTheme} /> : <Navigate to="/login" />
         }>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/accidents" element={<AccidentsPage />} />
